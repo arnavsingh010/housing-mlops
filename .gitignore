@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+build/
+dist/
+
+# data & model artifacts (regenerate with `make train`)
+data/*.csv
+models/*.joblib
+models/*.json
