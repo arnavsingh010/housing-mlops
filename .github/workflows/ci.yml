@@ -23,7 +23,7 @@ jobs:
         run: ruff check . && ruff format --check .
       - name: Tests (with coverage gate)
         run: pytest --cov --cov-report=term-missing --cov-report=xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: matrix.python-version == '3.12'
         with:
           name: coverage-xml
@@ -44,7 +44,7 @@ jobs:
         run: housing-mlops train
       - name: Sample predictions
         run: housing-mlops predict --sample 5
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: model
           path: models/
