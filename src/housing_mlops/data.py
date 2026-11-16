@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+import urllib.request
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
 logger = logging.getLogger(__name__)
 
@@ -68,36 +70,77 @@ def make_synthetic(n: int = 3000, seed: int = 42) -> pd.DataFrame:
     )
 
 
-def _fetch_california() -> pd.DataFrame:
-    from sklearn.datasets import fetch_california_housing
+def _download_raw(url: str) -> pd.DataFrame:
+    """Download the raw California housing CSV (1990 census block groups)."""
+    with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310 (fixed https URL from config)
+        return pd.read_csv(resp)
 
-    return fetch_california_housing(as_frame=True).frame
+
+def convert_raw(raw: pd.DataFrame) -> pd.DataFrame:
+    """Raw census table -> the schema the model uses (same columns as sklearn's dataset).
+
+    Rows with a missing `total_bedrooms` (207 of 20,640, ~1%) are dropped so that train and
+    test files are clean; the pipeline's imputer still protects inference-time inputs.
+    """
+    raw = raw.dropna(subset=["total_bedrooms"])
+    households = raw["households"].replace(0, np.nan)
+    return pd.DataFrame(
+        {
+            "MedInc": raw["median_income"],
+            "HouseAge": raw["housing_median_age"],
+            "AveRooms": raw["total_rooms"] / households,
+            "AveBedrms": raw["total_bedrooms"] / households,
+            "Population": raw["population"],
+            "AveOccup": raw["population"] / households,
+            "Latitude": raw["latitude"],
+            "Longitude": raw["longitude"],
+            TARGET: raw["median_house_value"] / 100_000,
+        }
+    )
 
 
-def load_data(cfg: dict[str, Any]) -> pd.DataFrame:
-    """Load data from cache -> California housing download -> synthetic fallback."""
+def split_data(df: pd.DataFrame, data_cfg: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Reproducible train/test split."""
+    train_df, test_df = train_test_split(
+        df, test_size=data_cfg["test_size"], random_state=data_cfg["random_state"]
+    )
+    return train_df.reset_index(drop=True), test_df.reset_index(drop=True)
+
+
+def prepare_data(cfg: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Download -> convert -> validate -> split -> write train.csv and test.csv."""
     data_cfg = cfg["data"]
-    cache = Path(data_cfg["cache_path"])
+    logger.info("Downloading raw dataset from %s", data_cfg["raw_url"])
+    df = convert_raw(_download_raw(data_cfg["raw_url"]))
+    validate_data(df)
+    train_df, test_df = split_data(df, data_cfg)
+
+    for df_part, path in ((train_df, data_cfg["train_path"]), (test_df, data_cfg["test_path"])):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df_part.to_csv(path, index=False)
+        logger.info("Wrote %s (%d rows)", path, len(df_part))
+    return train_df, test_df
+
+
+def load_train_test(cfg: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return (train_df, test_df): files on disk -> download+split -> synthetic fallback."""
+    data_cfg = cfg["data"]
 
     if data_cfg["source"] == "synthetic":
         logger.info("Using synthetic data")
-        return make_synthetic()
+        return split_data(make_synthetic(), data_cfg)
 
-    if cache.exists():
-        logger.info("Loading cached data from %s", cache)
-        return pd.read_csv(cache)
+    train_path, test_path = Path(data_cfg["train_path"]), Path(data_cfg["test_path"])
+    if train_path.exists() and test_path.exists():
+        logger.info("Loading %s and %s", train_path, test_path)
+        return pd.read_csv(train_path), pd.read_csv(test_path)
 
     try:
-        logger.info("Downloading California housing dataset...")
-        df = _fetch_california()
+        return prepare_data(cfg)
     except Exception as exc:  # network issues etc.
-        logger.warning("Download failed (%s). Falling back to synthetic data.", exc)
-        return make_synthetic()
-
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(cache, index=False)
-    logger.info("Cached dataset at %s (%d rows)", cache, len(df))
-    return df
+        logger.warning("Could not prepare real data (%s). Falling back to synthetic data.", exc)
+        return split_data(make_synthetic(), data_cfg)
 
 
 def validate_data(df: pd.DataFrame, require_target: bool = True) -> None:

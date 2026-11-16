@@ -11,7 +11,7 @@ import pandas as pd
 
 from housing_mlops import __version__
 from housing_mlops.config import load_config
-from housing_mlops.data import FEATURES, load_data, validate_data
+from housing_mlops.data import FEATURES, TARGET, load_train_test, prepare_data, validate_data
 from housing_mlops.predict import load_model, predict_df
 from housing_mlops.train import compute_metrics, passes_quality_gate, train
 
@@ -24,8 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", default=None, help="Path to YAML config")
     sub = p.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("train", help="Train model, evaluate, save artifacts")
-    sub.add_parser("evaluate", help="Re-evaluate saved model on the held-out split")
+    sub.add_parser("prepare", help="Download data and write train.csv / test.csv")
+    sub.add_parser("train", help="Train on train.csv, evaluate on test.csv, save artifacts")
+    sub.add_parser("evaluate", help="Re-evaluate saved model on test.csv")
 
     pr = sub.add_parser("predict", help="Predict prices")
     src = pr.add_mutually_exclusive_group(required=True)
@@ -46,21 +47,18 @@ def _cmd_train(cfg) -> int:
     return 0
 
 
+def _cmd_prepare(cfg) -> int:
+    train_df, test_df = prepare_data(cfg)
+    print(f"train: {len(train_df)} rows -> {cfg['data']['train_path']}")
+    print(f"test:  {len(test_df)} rows -> {cfg['data']['test_path']}")
+    return 0
+
+
 def _cmd_evaluate(cfg) -> int:
-    from sklearn.model_selection import train_test_split
-
-    from housing_mlops.data import TARGET
-
-    df = load_data(cfg)
-    validate_data(df)
-    _, X_test, _, y_test = train_test_split(
-        df[FEATURES],
-        df[TARGET],
-        test_size=cfg["data"]["test_size"],
-        random_state=cfg["data"]["random_state"],
-    )
+    _, test_df = load_train_test(cfg)
+    validate_data(test_df)
     bundle = load_model(cfg["artifacts"]["model_path"])
-    metrics = compute_metrics(y_test, bundle["pipeline"].predict(X_test))
+    metrics = compute_metrics(test_df[TARGET], bundle["pipeline"].predict(test_df[FEATURES]))
     print(json.dumps(metrics, indent=2))
     return 0 if passes_quality_gate(metrics, cfg) else 1
 
@@ -71,7 +69,7 @@ def _cmd_predict(cfg, args) -> int:
     elif args.json:
         df = pd.DataFrame([json.loads(args.json)])
     else:
-        df = load_data(cfg).sample(args.sample, random_state=0)
+        df = load_train_test(cfg)[1].sample(args.sample, random_state=0)  # rows from test set
 
     out = predict_df(df, cfg["artifacts"]["model_path"])
     if args.output:
@@ -88,6 +86,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         cfg = load_config(args.config)
+        if args.command == "prepare":
+            return _cmd_prepare(cfg)
         if args.command == "train":
             return _cmd_train(cfg)
         if args.command == "evaluate":

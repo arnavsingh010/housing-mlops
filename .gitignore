@@ -9,8 +9,9 @@ venv/
 coverage.xml
 build/
 dist/
+*.csv
 
-# data & model artifacts (regenerate with `make train`)
-data/*.csv
+# model artifacts (regenerate with `make train`)
+# data/train.csv + data/test.csv are tracked by DVC (dvc writes data/.gitignore itself)
 models/*.joblib
 models/*.json

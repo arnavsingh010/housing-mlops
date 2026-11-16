@@ -1,7 +1,9 @@
 data:
   source: california        # california | synthetic (california auto-falls back to synthetic if offline)
-  cache_path: data/housing.csv
-  test_size: 0.2
+  raw_url: https://raw.githubusercontent.com/ageron/handson-ml2/master/datasets/housing/housing.csv
+  train_path: data/train.csv
+  test_path: data/test.csv
+  test_size: 0.2            # only used when train/test files are (re)created by `prepare`
   random_state: 42
 
 model:

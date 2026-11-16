@@ -14,9 +14,8 @@ import numpy as np
 import pandas as pd
 import sklearn
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
 
-from housing_mlops.data import FEATURES, TARGET, load_data, validate_data
+from housing_mlops.data import FEATURES, TARGET, load_train_test, validate_data
 from housing_mlops.features import build_pipeline
 
 logger = logging.getLogger(__name__)
@@ -32,16 +31,12 @@ def compute_metrics(y_true: pd.Series, y_pred: np.ndarray) -> dict[str, float]:
 
 def train(cfg: dict[str, Any]) -> dict[str, Any]:
     """Run the full training pipeline. Returns the metrics dict and saves artifacts."""
-    df = load_data(cfg)
-    validate_data(df)
+    train_df, test_df = load_train_test(cfg)
+    validate_data(train_df)
+    validate_data(test_df)
 
-    X, y = df[FEATURES], df[TARGET]
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=cfg["data"]["test_size"],
-        random_state=cfg["data"]["random_state"],
-    )
+    X_train, y_train = train_df[FEATURES], train_df[TARGET]
+    X_test, y_test = test_df[FEATURES], test_df[TARGET]
 
     pipeline = build_pipeline(cfg)
     logger.info("Training %s on %d rows", cfg["model"]["type"], len(X_train))
