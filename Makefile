@@ -1,4 +1,4 @@
-.PHONY: install hooks lint format test train evaluate predict docker clean all
+.PHONY: install hooks lint format test prepare train serve evaluate predict docker clean all
 
 install:       ## Install package + dev tools
 	pip install -e ".[dev]"
@@ -15,8 +15,14 @@ format:        ## Auto-fix style issues
 test:          ## Run tests with coverage
 	pytest --cov
 
+prepare:       ## Download data -> data/train.csv + data/test.csv
+	housing-mlops prepare
+
 train:         ## Train model (enforces quality gate)
 	housing-mlops train
+
+serve:         ## Run the API locally on http://localhost:8000/docs
+	uvicorn housing_mlops.api:app --reload
 
 evaluate:      ## Re-evaluate saved model
 	housing-mlops evaluate
@@ -28,6 +34,6 @@ docker:        ## Build docker image
 	docker build -t housing-mlops .
 
 clean:
-	rm -rf .pytest_cache .ruff_cache .coverage coverage.xml models/*.joblib models/*.json data/*.csv
+	rm -rf .pytest_cache .ruff_cache .coverage coverage.xml models/*.joblib models/*.json data/train.csv data/test.csv
 
 all: lint test train
