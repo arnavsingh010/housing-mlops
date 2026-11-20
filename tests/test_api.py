@@ -29,8 +29,14 @@ def client_no_model(tmp_path):
         yield c
 
 
-def test_root_and_health(client):
-    assert client.get("/").status_code == 200
+def test_home_page_is_html(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "Predict price" in r.text
+
+
+def test_health(client):
     body = client.get("/health").json()
     assert body == {"status": "ok", "model_loaded": True}
 
