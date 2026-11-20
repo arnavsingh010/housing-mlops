@@ -1,6 +1,7 @@
 """FastAPI service: `uvicorn housing_mlops.api:app`.
 
 Endpoints
+    GET  /               simple web page (form -> price)
     GET  /health         liveness + whether a model is loaded
     GET  /model-info     metadata + test metrics of the loaded model
     POST /predict        one house  -> one price
@@ -18,11 +19,13 @@ from typing import Any
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from housing_mlops import __version__
 from housing_mlops.config import load_config
 from housing_mlops.data import FEATURES
+from housing_mlops.frontend import INDEX_HTML
 from housing_mlops.predict import load_model
 
 logger = logging.getLogger("housing_mlops.api")
@@ -106,9 +109,9 @@ def create_app(model_path: str | Path | None = None) -> FastAPI:
         preds = bundle["pipeline"].predict(df) * 100_000  # target is in $100k units
         return [Prediction(predicted_value_usd=round(float(p), 0)) for p in preds]
 
-    @app.get("/")
-    def root() -> dict[str, str]:
-        return {"service": "housing-mlops", "docs": "/docs", "health": "/health"}
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    def home() -> str:
+        return INDEX_HTML
 
     @app.get("/health")
     def health(request: Request) -> dict[str, Any]:
